@@ -257,18 +257,48 @@ def grad_block_data(target_path: str, calib_a_csv: str, calib_a_obsid: int,
     selA = beam == "A"
     tb_A_full[selA] = a_A[None, :] * x_lpf[np.ix_(selA, idx_obs)] + b_A[None, :]
 
-    # GRAD-block-averaged beam A Tb / beam B raw, per channel, per block
+    # GRAD-block-averaged beam A Tb / beam B raw, per channel, per block.
+    # Only keep GRAD blocks with a valid following ON/OFF block, split by
+    # "direction" (into-ON vs into-OFF), and BALANCE the two directions to
+    # equal counts (dropping extras from the more numerous side) -- this
+    # is re-derived per observation, never assumed/hardcoded, since the
+    # exact counts (21 GRAD chunks minus whichever edge chunks lack a
+    # valid pair or enough samples of both beams) vary file to file.
+    #
+    # The balance matters, not just having "enough" blocks: within GRAD,
+    # beam A and beam B are never simultaneously off-source (they sit at
+    # opposite ends of the fixed beam throw), so each direction's residual
+    # source-contamination mismatch (beam A approaching source while beam
+    # B departs, or vice versa) has an OPPOSITE sign in the two directions
+    # and cancels out only when both directions contribute EQUALLY -- see
+    # the 2026-08-10 GRAD-contamination investigation. An unbalanced mix
+    # (e.g. 9 into-ON vs 10 into-OFF) leaves a net one-sided bias.
     change = np.where(state[1:] != state[:-1])[0] + 1
     bounds = np.concatenate(([0], change, [len(state)]))
-    grad_blocks = [(bounds[i], bounds[i + 1]) for i in range(len(bounds) - 1) if state[bounds[i]] == "GRAD"]
+    blocks = [(state[bounds[i]], bounds[i], bounds[i + 1]) for i in range(len(bounds) - 1)]
+
+    blocks_by_dir = {"ON": [], "OFF": []}
+    for i, (s, lo, hi) in enumerate(blocks):
+        if s != "GRAD" or i + 1 >= len(blocks):
+            continue
+        nxt = blocks[i + 1][0]
+        if nxt not in ("ON", "OFF"):
+            continue
+        idx = np.arange(lo, hi)
+        idxA = idx[beam[idx] == "A"]
+        idxB = idx[beam[idx] == "B"]
+        if idxA.size < min_samples_per_beam or idxB.size < min_samples_per_beam:
+            continue
+        blocks_by_dir[nxt].append((lo, hi))
+
+    n_balanced = min(len(blocks_by_dir["ON"]), len(blocks_by_dir["OFF"]))
+    grad_blocks = blocks_by_dir["ON"][:n_balanced] + blocks_by_dir["OFF"][:n_balanced]
 
     tbA_blocks, xB_blocks = [], []
     for lo, hi in grad_blocks:
         idx = np.arange(lo, hi)
         idxA = idx[beam[idx] == "A"]
         idxB = idx[beam[idx] == "B"]
-        if idxA.size < min_samples_per_beam or idxB.size < min_samples_per_beam:
-            continue
         tbA_blocks.append(np.nanmean(tb_A_full[idxA], axis=0))
         xB_blocks.append(np.nanmean(x_lpf[np.ix_(idxB, idx_obs)], axis=0))
     tbA_blocks = np.array(tbA_blocks)

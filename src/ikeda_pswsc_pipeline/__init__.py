@@ -10,9 +10,12 @@ from .calibration import (
 from .spectrum import onoff_diff_spectrum, onoff_diff_spectrum_from_tb, fa_ica_spectrum
 from .faica_denoise import select_n_components_mdl, fit_faica, ic_diagnostics, clean_ic_spike, flag_noisy_kids
 from .plotting import plot_spectrum
+from .grad_skydip import calibrate_beam_from_grad_offpoint, pwv_seed_from_calibrated_tb
 
 __all__ = [
     "apply_lpf_per_beam",
+    "calibrate_beam_from_grad_offpoint",
+    "pwv_seed_from_calibrated_tb",
     "calibrate_beamB_from_grad",
     "clean_ic_spike",
     "cv_select_frac",

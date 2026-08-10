@@ -32,8 +32,12 @@
 # %%
 import sys
 
+import numpy as np
+
 sys.path.insert(0, "../src")
-from ikeda_pswsc_pipeline import step0_calibrate_beamB, onoff_diff_spectrum, fa_ica_spectrum, plot_spectrum
+from ikeda_pswsc_pipeline import (
+    step0_calibrate_beamB, onoff_diff_spectrum, fa_ica_spectrum, plot_spectrum, load_pswsc,
+)
 
 CALIB_A_CSV = "../../tau0/skydip_calibration_v3_lpf.csv"
 N_COMPONENTS_FIXED = 20
@@ -51,6 +55,10 @@ for name, target_path, calib_a_obsid in TARGETS:
     print(f"  raw-flagged excluded: {s0['chan_flagged_raw']} -> {len(chan)} channels remain", flush=True)
     print(f"  CV: frac_a={s0['cv']['best_frac_a']:.2e} frac_b={s0['cv']['best_frac_b']:.2e}", flush=True)
 
+    da_full = load_pswsc(target_path)
+    _, idx_flagged, _ = np.intersect1d(da_full.chan.to_numpy(), s0["chan_flagged_raw"], return_indices=True)
+    freq_flagged = da_full.frequency.to_numpy()[idx_flagged]
+
     spec_raw = onoff_diff_spectrum(target_path, a_A, b_A, a_B, b_B, chan, lpf_cutoff_hz=None)
     print("  raw spectrum: done", flush=True)
     spec_lpf = onoff_diff_spectrum(target_path, a_A, b_A, a_B, b_B, chan, lpf_cutoff_hz=1.0)
@@ -65,7 +73,7 @@ for name, target_path, calib_a_obsid in TARGETS:
     ]:
         out_path = f"04_spectrum_{method}_{name}_{s0['obsid']}.png"
         plot_spectrum(spec, title=f"{spec['obj_name']} (obsid={spec['obsid']}): {title} ({len(chan)} chan)",
-                      out_path=out_path)
+                      out_path=out_path, flagged_freq=freq_flagged)
         print(f"  saved: {out_path}", flush=True)
 
 # %%
