@@ -1,0 +1,20 @@
+# generated analysis outputs -- not yet publishable
+analysis/*.png
+analysis/*.npz
+analysis/*.csv
+analysis/*.log
+
+# scratch / exploratory work, not part of the finalized pipeline
+tmp/
+
+# observation data -- never belongs in this repo, but just in case
+data/
+*.zarr.zip
+
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/

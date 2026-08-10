@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ikeda-pswsc-pipeline"
+version = "0.1.0"
+description = "Calibration and ON-OFF spectrum extraction pipeline for DESHIMA/ASTE position-switching (pswsc) observations"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+    "xarray",
+    "scikit-learn",
+    "matplotlib",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
