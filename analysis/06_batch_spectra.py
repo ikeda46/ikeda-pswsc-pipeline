@@ -73,9 +73,14 @@
 # Verified with a serial 20-file probe (both fixes applied): RSS stayed
 # completely flat file-to-file (deltas of a few hundred KB to ~1MB, some
 # even negative) after the first file's one-time warm-up, vs. the
-# unfixed version's +1.2-1.6GB per file. NPROC can likely be raised
-# again given this, but hasn't been re-tested at higher NPROC since the
-# fix -- confirm peak per-worker RSS empirically before doing so.
+# unfixed version's +1.2-1.6GB per file. Re-tested at full NPROC=24 via a
+# real Pool run on a 150-file random subset (not just the serial probe):
+# peak total RSS across all 24 workers topped out around ~100GB (well
+# under the 251GB ceiling), oscillated rather than climbed, and returned
+# to baseline (~12GB) immediately after the Pool closed -- 148/150 ok (2
+# failures were pre-existing unrelated data-quality issues, same
+# `ValueError: y must contain only finite values` signature seen in the
+# original NPROC=8 full run). NPROC=24 restored below as the new default.
 
 # %%
 import os
@@ -105,7 +110,7 @@ CLASSIFICATION_CSV = f"{TAU0_DIR}/dems_classification.csv"
 RESULTS_DIR = "../results"
 
 PILOT_N = 15
-NPROC = 8  # lowered from 24 after an OOM crash -- see module docstring
+NPROC = 24  # restored after the chunks=None + BLAS-thread-cap fix -- see module docstring
 
 
 def resolve_path(catalog_file: str) -> str:
