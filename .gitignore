@@ -3,6 +3,7 @@ analysis/*.png
 analysis/*.npz
 analysis/*.csv
 analysis/*.log
+results/
 
 # scratch / exploratory work, not part of the finalized pipeline
 tmp/

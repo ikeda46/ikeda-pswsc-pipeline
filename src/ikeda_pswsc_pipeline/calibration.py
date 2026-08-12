@@ -70,10 +70,24 @@ RAW_NOISY_KID_THRESH = 10.0
 
 
 def load_pswsc(target_path: str) -> "xr.DataArray":
-    """Load a pswsc dems file, restrict to GRAD/ON/OFF, despike, sort by time."""
-    da = dc.load.dems(target_path)
+    """Load a pswsc dems file, restrict to GRAD/ON/OFF, despike, sort by time.
+
+    `chunks=None` disables decode's default dask-backed lazy loading
+    (`chunks="auto"` for zarr files) -- this function calls `to_numpy()`
+    on the array immediately below anyway, so dask buys nothing here, and
+    its default threaded scheduler spins up a NEW batch of worker threads
+    on every dask compute that are never torn down within a process
+    (confirmed: thread count climbs by ~20-25 per load call, unbounded up
+    to `os.cpu_count()`). In a long-running batch (one process handling
+    hundreds of files, e.g. `analysis/06_batch_spectra.py`'s Pool
+    workers), this both wastes memory on thread stacks/thread-local
+    buffers and was the dominant cause of the ~200GB RSS growth seen
+    2026-08-12 at NPROC=24 (worse than, and independent of, the
+    plt.close(fig) matplotlib-figure leak fixed earlier the same day).
+    """
+    da = dc.load.dems(target_path, chunks=None)
     if da.long_name != "df/f":
-        da = dc.load.dems(target_path, data_scaling="df/f")
+        da = dc.load.dems(target_path, data_scaling="df/f", chunks=None)
 
     arr = da.to_numpy()
     bad = np.isnan(np.mean(arr, axis=0)) | (np.nanstd(arr, axis=0) == 0)
@@ -235,6 +249,7 @@ def grad_block_data(target_path: str, calib_a_csv: str, calib_a_obsid: int,
     beam = da_sub.beam.to_numpy()
     chan_all = da_sub.chan.to_numpy()
     freq_all = da_sub.frequency.to_numpy()
+    master_id_all = da_sub.d2_mkid_id.to_numpy()
     t_sec = utils.dt_to_seconds(da_sub)
     x_raw = da_sub.to_numpy()
 
@@ -305,9 +320,10 @@ def grad_block_data(target_path: str, calib_a_csv: str, calib_a_obsid: int,
     xB_blocks = np.array(xB_blocks)
 
     return dict(obsid=obsid, obj_name=obj_name, chan=common_chan, freq=freq_common,
+                master_id=master_id_all[idx_obs],
                 a_A=a_A, b_A=b_A, tbA_blocks=tbA_blocks, xB_blocks=xB_blocks,
                 state=state, beam=beam, t_sec=t_sec, x_lpf=x_lpf, idx_obs=idx_obs,
-                chan_all=chan_all, tb_A_full=tb_A_full,
+                chan_all=chan_all, freq_all=freq_all, master_id_all=master_id_all, tb_A_full=tb_A_full,
                 chan_flagged_raw=chan_all[flagged_raw])
 
 
@@ -361,9 +377,11 @@ def _fit_from_grad_data(d: dict, frac_a: float, frac_b: float) -> dict:
             a_B[c], b_B[c] = _ridge_fit(x[ok], y[ok], a_A[c], b_A[c], frac_a, frac_b)
 
     return dict(obsid=d["obsid"], obj_name=d["obj_name"], chan=d["chan"], freq=d["freq"],
+                master_id=d["master_id"],
                 a_B=a_B, b_B=b_B, r2=r2, n_blocks=n_blocks,
                 a_A=a_A, b_A=b_A, state=d["state"], beam=d["beam"], t_sec=d["t_sec"],
-                x_lpf=d["x_lpf"], idx_obs=d["idx_obs"], chan_all=d["chan_all"], tb_A_full=d["tb_A_full"],
+                x_lpf=d["x_lpf"], idx_obs=d["idx_obs"], chan_all=d["chan_all"], freq_all=d["freq_all"],
+                master_id_all=d["master_id_all"], tb_A_full=d["tb_A_full"],
                 chan_flagged_raw=d["chan_flagged_raw"])
 
 

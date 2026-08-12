@@ -30,7 +30,8 @@ def plot_spectrum(spec: dict, title: str | None = None, out_path: str | None = N
     they have no data point in `spec`, they're marked as small red x's
     sitting on the Tb=0 line instead.
     """
-    if ax is None:
+    owns_fig = ax is None
+    if owns_fig:
         fig, ax = plt.subplots(figsize=figsize)
     else:
         fig = ax.figure
@@ -51,4 +52,6 @@ def plot_spectrum(spec: dict, title: str | None = None, out_path: str | None = N
     fig.tight_layout()
     if out_path:
         fig.savefig(out_path, dpi=150, bbox_inches="tight")
+        if owns_fig:
+            plt.close(fig)
     return fig
