@@ -33,6 +33,16 @@
 #    comparison. Also saves per-channel calibration diagnostics
 #    (a_A/b_A/a_B/b_B/chan/freq/master_id, CV fracs, R^2, flagged
 #    channels, which skydip was used and the time gap to it).
+# 5. Estimate OFF-point PWV(t) (`pwv.estimate_pwv_timeseries`, model
+#    eta_atm, 60s sliding window / 20s step), the per-channel mean
+#    eta_atm it implies, and the resulting T* = spectrum/mean_eta_atm
+#    (`pwv.tstar_spectrum`) -- see `07_summary_test.py` for the NGC1068/
+#    Mars prototype this was validated against before being wired in
+#    here. Saves the PWV time series as data
+#    (`pwv_timeseries_<tag>.npz`) and a combined 3-panel PNG (spectrum /
+#    PWV(t) / T*, all deliberately without error bars --
+#    `summary_<tag>.png`), alongside (not replacing) the existing
+#    per-step outputs above.
 #
 # Each file is wrapped in try/except so one failure doesn't stop the batch;
 # failures are logged with their error message, not silently dropped.
@@ -101,7 +111,10 @@ import pandas as pd
 from tqdm import tqdm
 
 sys.path.insert(0, "../src")
-from ikeda_pswsc_pipeline import step0_calibrate_beamB, onoff_diff_spectrum, plot_spectrum
+from ikeda_pswsc_pipeline import (
+    step0_calibrate_beamB, onoff_diff_spectrum, plot_spectrum,
+    estimate_pwv_timeseries, mean_eta_atm_per_chan, tstar_spectrum, plot_summary,
+)
 
 TAU0_DIR = "../../tau0"
 CALIB_A_CSV = f"{TAU0_DIR}/skydip_calibration_v3_lpf.csv"
@@ -181,10 +194,21 @@ def process_one(row: dict, skydip_lookup: pd.DataFrame) -> dict:
         plot_spectrum(spec, title=f"{obj_name} (obsid={obsid}): LPF 1.0Hz ({len(chan)} chan)",
                       out_path=f"{outdir}/spectrum_lpf1hz_{tag}.png", flagged_freq=freq_flagged)
 
+        df_pwv = estimate_pwv_timeseries(target_path, a_A, b_A, a_B, b_B, chan)
+        np.savez(f"{outdir}/pwv_timeseries_{tag}.npz", t=df_pwv["t"].to_numpy(), pwv=df_pwv["pwv"].to_numpy(),
+                  el=df_pwv["el"].to_numpy(), t_amb=df_pwv["t_amb"].to_numpy(), n=df_pwv["n"].to_numpy())
+
+        eta_result = mean_eta_atm_per_chan(df_pwv, chan, s0["freq"])
+        tstar = tstar_spectrum(spec, eta_result)
+        plot_summary(spec, df_pwv, tstar, title=f"{obj_name} (obsid={obsid})",
+                     out_path=f"{outdir}/summary_{tag}.png", flagged_freq_raw=freq_flagged)
+
         result.update(status="ok", obj_name=obj_name, calib_a_obsid=calib_a_obsid, gap_hours=gap_hours,
                        n_blocks=s0["n_blocks"], r2_median=float(np.nanmedian(s0["r2"])),
                        cv_frac_a=s0["cv"]["best_frac_a"], cv_frac_b=s0["cv"]["best_frac_b"],
-                       n_flagged_raw=len(s0["chan_flagged_raw"]), n_chan_final=len(chan))
+                       n_flagged_raw=len(s0["chan_flagged_raw"]), n_chan_final=len(chan),
+                       n_pwv_windows=len(df_pwv), pwv_mean=float(df_pwv["pwv"].mean()) if len(df_pwv) else np.nan,
+                       n_eta_flagged=int(eta_result["flagged"].sum()))
     except Exception as e:
         result.update(error=f"{type(e).__name__}: {e}", traceback=traceback.format_exc())
     result["runtime_sec"] = time.time() - t0
