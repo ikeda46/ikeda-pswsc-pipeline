@@ -44,6 +44,20 @@
 #    `summary_<tag>.png`), alongside (not replacing) the existing
 #    per-step outputs above.
 #
+#    T* frequency range fix (2026-08-19): `mean_eta_atm_per_chan` now
+#    evaluates eta_atm (and so T*) across the FULL common channel set by
+#    default (`full_range=True`), not just the freq>250GHz subset used
+#    to FIT pwv itself -- the >250GHz restriction only ever existed for
+#    pwv-fit stability (low-frequency channels have little PWV leverage,
+#    inherited from the original daisy PWV-fit pipeline), not because
+#    the ATM model/TOPTICA filter data is unavailable below 250GHz (it
+#    covers 200-459.9GHz). An astronomer sharing the earlier
+#    (>250GHz-only) T* results flagged that T* wasn't computed for every
+#    channel in the spectrum -- see `pwv.py`'s module docstring for the
+#    full reasoning. This re-run regenerates `summary_<tag>.png`/
+#    `pwv_timeseries_<tag>.npz` for all files with T* now spanning the
+#    same range as the spectrum panel above it.
+#
 # Each file is wrapped in try/except so one failure doesn't stop the batch;
 # failures are logged with their error message, not silently dropped.
 #

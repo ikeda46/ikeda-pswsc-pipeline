@@ -22,6 +22,21 @@ instantaneous) per-channel value -- deliberately, since a per-window
 divide-by-eta_atm would blow up at any single low-eta_atm window/pwv
 combination; averaging first makes near-zero values far less likely, and
 any that remain are flagged (`ETA_MIN`) rather than plotted.
+
+freq>250GHz split (2026-08-19): `_filter_setup`'s FREQ_MIN_GHZ=250 cut
+(inherited from the original daisy `empirical_tau0.py` PWV fit) exists
+to keep the PWV curve_fit itself well-conditioned -- channels below
+250GHz sit where the atmosphere is more transparent, so eta_atm has
+little PWV-leverage there, and including them dilutes/destabilizes the
+single-parameter fit. It is NOT a data-availability limit: the TOPTICA
+filter measurement (`d24_tools.utils.load_filters`) covers 200-459.9GHz,
+well below 250GHz. So the restriction only needs to apply to the PWV
+FIT (`estimate_pwv_timeseries`, unchanged, still >250GHz-only for fit
+stability) -- once PWV(t) is known, eta_atm at any OTHER frequency can
+still be evaluated from the same model, just not used to help determine
+that PWV. `mean_eta_atm_per_chan` therefore evaluates eta_atm (and so
+T*) for the FULL common channel set by default, decoupled from the
+fit's own channel restriction -- see `_filter_setup_full` below.
 """
 
 from __future__ import annotations
@@ -103,18 +118,47 @@ def estimate_pwv_timeseries(target_path: str, a_A: np.ndarray, b_A: np.ndarray,
     return pd.DataFrame(rows).sort_values("t").reset_index(drop=True)
 
 
+def _filter_setup_full(chan_k: np.ndarray, freq_k: np.ndarray):
+    """Same TOPTICA-filter-convolution setup as `_filter_setup`, but
+    WITHOUT its freq>250GHz mask -- returns (gamma, eta_fdf, f_mid,
+    freq, idx_obs) for every channel in `chan_k` that has TOPTICA filter
+    data (i.e. the full ~200-459.9GHz range), not just the >250GHz
+    subset `_filter_setup` keeps for PWV-fit stability. Used to evaluate
+    eta_atm at an ALREADY-KNOWN pwv across the full band (see module
+    docstring) -- never for fitting pwv itself, which still goes through
+    `_filter_setup`/`_fit_chunk_pwv` unchanged.
+    """
+    eta_f, chan_toptica, _, freq_toptica = d24_utils.load_filters()
+    eta_f = eta_f ** 2
+    _, idx_top, idx_obs = np.intersect1d(chan_toptica, chan_k, assume_unique=True, return_indices=True)
+    eta_f_sel = eta_f[:, idx_top]
+    freq_sel = freq_k[idx_obs]
+
+    df = np.diff(freq_toptica)[:, None]
+    eta_fdf = (eta_f_sel[:-1] + eta_f_sel[1:]) / 2 * df
+    gamma = np.nansum(eta_fdf, axis=0)
+    f_mid = (freq_toptica[1:] + freq_toptica[:-1]) / 2
+    return gamma, eta_fdf, f_mid, freq_sel, idx_obs
+
+
 def mean_eta_atm_per_chan(df_pwv: pd.DataFrame, chan_common: np.ndarray, freq_common: np.ndarray,
-                           eta_min: float = ETA_MIN) -> dict:
+                           eta_min: float = ETA_MIN, full_range: bool = True) -> dict:
     """Per-channel eta_atm, averaged over the whole PWV(t) time series
     (`estimate_pwv_timeseries`'s output) -- a single value per channel,
     not a time series. Channels whose mean eta_atm < eta_min are flagged
     (deep absorption-line troughs -- dividing by these would blow up).
 
-    Restricted to the same freq>250GHz channel subset as the PWV fit
-    itself (`_filter_setup`) -- there is no model eta_atm available
-    below that, so those channels simply have no T* value.
+    full_range=True (default): evaluates eta_atm for every channel in
+    `chan_common` that has TOPTICA filter data (`_filter_setup_full`),
+    i.e. matches the full spectrum's own frequency range, NOT just the
+    freq>250GHz subset used to fit the pwv this is evaluated at (see
+    module docstring for why that's a valid thing to do).
+    full_range=False: restricted to the same freq>250GHz subset as the
+    PWV fit (`_filter_setup`) -- kept only for comparison/backward
+    compatibility, not the default going forward.
     """
-    gamma, eta_fdf, f_mid, freq_fit, idx_fit = _filter_setup(chan_common, freq_common)
+    filter_setup = _filter_setup_full if full_range else _filter_setup
+    gamma, eta_fdf, f_mid, freq_fit, idx_fit = filter_setup(chan_common, freq_common)
     atm_interp = atm.get_eta_atm()
 
     csc = 1.0 / np.sin(np.deg2rad(df_pwv["el"].to_numpy()))
